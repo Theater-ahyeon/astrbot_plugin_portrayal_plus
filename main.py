@@ -14,6 +14,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 from astrbot.core.provider.entities import ProviderRequest
 
 from .core.bot_identity import BotIdentityStore, build_avatar_urls, download_avatar_b64
+from .core.chat_text import markdown_to_plain
 from .core.config import PluginConfig
 from .core.db import UserProfileDB
 from .core.entry import EntryService
@@ -219,7 +220,8 @@ class PortrayalPlugin(Star):
         if not profile:
             yield event.plain_result("本地暂无该用户画像记录")
             return
-        msg = f"【{profile.nickname}】的画像\n{profile.to_text()}"
+        # 聊天框不渲染 Markdown，这里转成纯文本再发（存储内容保持原样）
+        msg = f"【{profile.nickname}】的画像\n{markdown_to_plain(profile.to_text())}"
         yield event.plain_result(msg)
 
     # =========================
@@ -274,7 +276,7 @@ class PortrayalPlugin(Star):
 
         yield event.plain_result(
             f"【{profile.nickname}】当前的克隆人格（{len(content)} 字）：\n"
-            f"{content}"
+            f"{markdown_to_plain(content)}"
         )
         if len(content) > MAX_SAFE_PROMPT_LEN:
             yield event.plain_result(
@@ -428,7 +430,8 @@ class PortrayalPlugin(Star):
         profile.portrait = content
         profile.timestamp = int(time.time())
         self.db.set(profile)
-        yield event.plain_result(content)
+        # QQ 等聊天框不渲染 Markdown：发送前转纯文本，避免满屏 # 与 *
+        yield event.plain_result(markdown_to_plain(content))
 
     # =========================
     # 快捷修改人格

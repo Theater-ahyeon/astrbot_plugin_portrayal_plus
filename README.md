@@ -16,43 +16,27 @@ _✨ 人物画像插件 ✨_
 
 > 注意：自本插件v1.1.5开始，已移除插件内置的t2i, 输入内容将直接以长文本形式输出，如果有转图片的需求，推荐使用：[输出增强插件](https://github.com/Zhalslar/astrbot_plugin_outputpro)，插件提供了精美的t2i功能
 
-## 🖼️ 界面预览
-
-WebUI 人格面板：左侧档案列表，右侧直接编辑克隆人格（追加 / 整段替换 / LLM 重写），
-改完在群里执行一次「切换人格」即生效。
-
-![人格面板](docs/panel.png)
-
 ## 💡 介绍
 
 根据群友的聊天记录，调用llm分析群友的性格画像
 
 ## 📦 安装
 
-**方式一：从 URL 安装（推荐）**
+- 可以直接在astrbot的插件市场搜索astrbot_plugin_portrayal，点击安装即可  
 
-AstrBot 面板 → 插件 → 从 URL 安装，填：
-
-```
-https://github.com/Theater-ahyeon/astrbot_plugin_portrayal_plus
-```
-
-**方式二：手动克隆**
+- 或者可以直接克隆源码到插件文件夹：
 
 ```bash
 # 克隆仓库到插件目录
 cd /AstrBot/data/plugins
-git clone --depth 1 https://github.com/Theater-ahyeon/astrbot_plugin_portrayal_plus
+git clone https://github.com/Theater-ahyeon/astrbot_plugin_portrayal_plus
 
-# 控制台重启 AstrBot
+# 控制台重启AstrBot
 ```
-
-> 安装后的目录/插件名是 `astrbot_plugin_portrayal_plus`，**可与原插件同时存在**。
-> 首次启动会把原插件数据目录（`astrbot_plugin_portrayal`）里的档案自动迁移过来。
 
 ## ⚙️ 配置
 
-请在 AstrBot 面板配置：插件管理 → astrbot_plugin_portrayal_plus → 操作 → 插件配置
+请在astrbot面板配置，插件管理 -> astrbot_plugin_portrayal -> 操作 -> 插件配置
 
 ## 🖥️ 人格面板（WebUI）
 
