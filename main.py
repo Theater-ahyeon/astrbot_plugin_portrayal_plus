@@ -446,6 +446,11 @@ class PortrayalPlugin(Star):
         profile.portrait = content
         profile.timestamp = int(time.time())
         self.db.set(profile)
+        logger.info(
+            f"已生成画像/人格：{profile.nickname}({profile.user_id}) "
+            f"{len(content)} 字，命令={cmd}，"
+            f"{'已写入克隆人格' if '克隆' in cmd else '仅保存画像'}"
+        )
         # QQ 等聊天框不渲染 Markdown：发送前转纯文本，避免满屏 # 与 *
         yield event.plain_result(markdown_to_plain(content))
 

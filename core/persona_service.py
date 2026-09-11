@@ -266,12 +266,18 @@ class PersonaService:
             if not current:
                 raise PersonaError("本地暂无该用户档案，请先执行「克隆人格 @群友」")
             old = current.clone_prompt.strip()
-            if not old:
-                raise PersonaError("该用户暂无可用的克隆人格，请先执行「克隆人格 @群友」")
             if mode == "append":
+                # 追加必须已有内容，否则「追加」无从谈起
+                if not old:
+                    raise PersonaError(
+                        "该用户还没有克隆人格，「追加」无从追加；"
+                        "请先用「改人格 @群友 重置：<完整人格>」写入一份完整人格"
+                    )
                 new_content = f"{old}\n{text}"
                 label = "追加"
             else:
+                # 重置是整段替换：**不要求**已有旧人格
+                # （典型场景：用 ChatLab 等外部工具分析后直接把全文写进来）
                 new_content = text
                 label = "重置"
         elif mode == "create":
