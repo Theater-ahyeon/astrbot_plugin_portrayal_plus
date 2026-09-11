@@ -103,9 +103,14 @@ class MessageManager:
         self,
         group_id: str,
         messages: list[dict[str, Any]],
-    ):
-        """Cache one page of group messages by user."""
+    ) -> int:
+        """Cache one page of group messages by user（按消息 ID 去重）
+
+        Returns:
+            本次**新增**的消息条数（重复消息不计）。
+        """
         now = time()
+        added = 0
 
         for msg in messages:
             user_id = str(msg["sender"]["user_id"])
@@ -119,15 +124,15 @@ class MessageManager:
 
             key = self._user_key(group_id, user_id)
             cached = self._user_cache.get(key)
+            if cached is None:
+                cached = CachedMessages(texts=[], timestamp=now)
+                self._user_cache[key] = cached
 
-            if not cached:
-                self._user_cache[key] = CachedMessages(
-                    texts=[text],
-                    timestamp=now,
-                )
-            else:
-                cached.texts.append(text)
-                cached.timestamp = now
+            if cached.add(text, str(msg.get("message_id", ""))):
+                added += 1
+            cached.timestamp = now
+
+        return added
 
     # =========================
     # public api
@@ -264,6 +269,10 @@ class MessageManager:
 
         rounds = 0
         cache_changed = False
+        # 实际抓到的群消息条数（scanned_messages 用真实值，不再按「轮数 × 每页条数」估算）
+        scanned_actual = 0
+        # 本次扫描内已经见过的消息 ID，用于过滤同一页/跨页重复
+        seen_page_ids: set[str] = set()
 
         # Resume from the shared group scan cursor.
         message_seq = self._group_cursor.get(group_id, 0)
@@ -291,7 +300,17 @@ class MessageManager:
                     if messages:
                         message_seq = messages[0]["message_id"]
                         self._group_cursor[group_id] = message_seq
-                        self._collect_messages(group_id, messages)
+                        # 同一页里可能重复返回同一条，先按 ID 过滤再入库
+                        fresh = [
+                            m
+                            for m in messages
+                            if str(m.get("message_id", "")) not in seen_page_ids
+                        ]
+                        seen_page_ids.update(
+                            str(m.get("message_id", "")) for m in messages
+                        )
+                        scanned_actual += len(fresh)
+                        self._collect_messages(group_id, fresh)
                         cache_changed = True
 
                 messages = result.get("messages", [])
@@ -314,6 +333,6 @@ class MessageManager:
 
         return MessageQueryResult(
             texts=texts[: self.cfg.max_msg_count],
-            scanned_messages=rounds * self.cfg.per_query_count,
+            scanned_messages=scanned_actual,
             from_cache=cached is not None,
         )

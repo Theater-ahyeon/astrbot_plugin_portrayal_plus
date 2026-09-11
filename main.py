@@ -391,13 +391,20 @@ class PortrayalPlugin(Star):
             return
         if result.from_cache and result.scanned_messages <= 0:
             yield event.plain_result(
-                f"命中缓存，已提取到{result.count}条{profile.nickname}的聊天记录，"
+                f"缓存中已有 {result.count} 条{profile.nickname}的聊天记录，"
                 f"正在{cmd}..."
             )
         else:
+            scanned = result.scanned_messages
+            cached_part = max(0, result.count - scanned) if result.from_cache else 0
+            detail = f"已扫描{scanned}条群消息"
+            if cached_part:
+                detail += f"（其中约{cached_part}条来自缓存）"
+            # 「单次请求上限」是每页抓取上限，不是已取满，避免被读成「N 条里怎么提取出更多条」
+            per_page = self.cfg.message.per_query_count
             yield event.plain_result(
-                f"已从{result.scanned_messages}条群消息中提取到"
-                f"{result.count}条{profile.nickname}的聊天记录，正在{cmd}..."
+                f"{detail}，共提取到{result.count}条{profile.nickname}的聊天记录"
+                f"（单次请求上限{per_page}条，已按需翻页），正在{cmd}..."
             )
 
         # LLM 分析画像（存在旧克隆人格时自动走融合）
