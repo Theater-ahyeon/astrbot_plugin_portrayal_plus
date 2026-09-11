@@ -16,6 +16,7 @@ from astrbot.core.provider.entities import ProviderRequest
 from .core.bot_identity import BotIdentityStore, build_avatar_urls, download_avatar_b64
 from .core.chat_text import markdown_to_plain
 from .core.config import PluginConfig
+from .core.emoji import slash_emoji_to_emoji
 from .core.db import UserProfileDB
 from .core.entry import EntryService
 from .core.llm import LLMService
@@ -48,6 +49,7 @@ RESERVED_COMMANDS = frozenset(
         "还原机器人资料",
         "查头像",
         "人格列表",
+        "修复表情",
     }
 )
 
@@ -409,8 +411,15 @@ class PortrayalPlugin(Star):
 
         # LLM 分析画像（存在旧克隆人格时自动走融合）
         try:
+            # 送模型前把斜杠表情转成真 emoji，避免模型照抄「/擦汗」
+            raw_texts = getattr(result, "texts", []) or []
+            to_llm = (
+                result.normalized_texts()
+                if hasattr(result, "normalized_texts")
+                else [slash_emoji_to_emoji(x) for x in raw_texts]
+            )
             content = await self.llm.generate_portrait(
-                result.texts,
+                to_llm,
                 profile,
                 prompt.content,
                 old_clone_prompt=old_clone_prompt,
@@ -958,6 +967,41 @@ class PortrayalPlugin(Star):
             msg += f"\n⚠️ {identity_warning}"
         return msg
 
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("修复表情")
+    async def fix_emoji_in_personas(self, event: AiocqhttpMessageEvent):
+        """
+        修复表情 —— 把库里人格/画像中的 /擦汗 这类斜杠表情就地转成真 emoji
+
+        上游（如 ChatLab）生成的人格常写成 `/擦汗`，模型会照抄这种写法。
+        存量数据不会自动改写，执行本命令批量修一次即可。
+        """
+        from .core.emoji import slash_emoji_to_emoji
+
+        changed: list[str] = []
+        for profile in self.db.all().values():
+            touched = False
+            for field in ("clone_prompt", "portrait"):
+                raw = getattr(profile, field, "") or ""
+                fixed = slash_emoji_to_emoji(raw)
+                if fixed != raw:
+                    setattr(profile, field, fixed)
+                    touched = True
+            if touched:
+                changed.append(profile.nickname or profile.user_id)
+
+        if not changed:
+            yield event.plain_result("所有人格/画像里都没有需要修复的斜杠表情。")
+            return
+
+        self.db.save()
+        names = "、".join(changed[:10])
+        more = f" 等 {len(changed)} 人" if len(changed) > 10 else ""
+        yield event.plain_result(
+            f"已把 {len(changed)} 份人格/画像里的斜杠表情转成真 emoji：{names}{more}\n"
+            f"注意：已推给 AstrBot 的人格需要重新执行「切换人格」才会更新。"
+        )
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("人格列表")

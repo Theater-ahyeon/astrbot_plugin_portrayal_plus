@@ -12,6 +12,8 @@ from typing import Any
 
 from astrbot.api import logger
 
+from .emoji import slash_emoji_to_emoji
+
 from .config import PluginConfig
 from .db import UserProfileDB
 from .entry import EntryService
@@ -91,6 +93,15 @@ class GenerateResult:
             "from_cache": self.from_cache,
             "clone_prompt": self.content,
         }
+
+
+def normalize_persona_text(text: str) -> str:
+    """把人格正文里的斜杠表情（/擦汗）统一转成真 emoji
+
+    上游（如 ChatLab）生成的人格常用 `/擦汗` 表示表情，写进库后模型会照抄这种写法，
+    发消息时就成了「/擦汗」而不是 😅。
+    """
+    return slash_emoji_to_emoji(text or "")
 
 
 class PersonaService:
@@ -245,7 +256,7 @@ class PersonaService:
         if self.cfg.message.is_protected_user(user_id):
             raise PersonaError("该用户在保护名单中，不允许修改")
 
-        text = (content or "").strip()
+        text = normalize_persona_text((content or "").strip())
         if not text:
             raise PersonaError("人格正文不能为空")
 
@@ -320,7 +331,7 @@ class PersonaService:
             logger.error(f"[面板] LLM 改写失败：{e}")
             raise PersonaError(f"修改失败：{e}，已保留原有人格") from e
 
-        content = (content or "").strip()
+        content = normalize_persona_text((content or "").strip())
         if not content:
             raise PersonaError("修改结果为空，已保留原有人格")
 
@@ -388,7 +399,7 @@ class PersonaService:
             logger.error(f"[面板] LLM 生成失败：{e}")
             raise PersonaError(f"生成失败：{e}，已保留原有人格") from e
 
-        content = (content or "").strip()
+        content = normalize_persona_text((content or "").strip())
         if not content:
             raise PersonaError("生成结果为空，已保留原有人格")
 

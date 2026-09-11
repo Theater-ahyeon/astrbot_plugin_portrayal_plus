@@ -11,6 +11,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 )
 
 from .config import PluginConfig
+from .emoji import face_segment_to_emoji, slash_emoji_to_emoji
 from .message_cache import CachedMessages, MessageCacheStorage
 
 
@@ -29,6 +30,14 @@ class MessageQueryResult:
     @property
     def is_empty(self) -> bool:
         return not self.texts
+
+    def normalized_texts(self) -> list[str]:
+        """送进 LLM 前用的文本：斜杠表情 `/擦汗` 转成真 emoji
+
+        缓存里保留**原文**（忠实于聊天记录），但模型看到的应该是真表情：
+        否则模型会照抄「/擦汗」这种写法，人格里就又出现斜杠表情了。
+        """
+        return [slash_emoji_to_emoji(x) for x in self.texts]
 
 
 # =========================
@@ -115,9 +124,19 @@ class MessageManager:
         for msg in messages:
             user_id = str(msg["sender"]["user_id"])
 
-            text = "".join(
-                seg["data"]["text"] for seg in msg["message"] if seg["type"] == "text"
-            ).strip()
+            # 文本段与表情段都要：此前表情段被直接丢弃，模型完全看不到对方发表情
+            parts: list[str] = []
+            for seg in msg["message"]:
+                seg_type = seg.get("type")
+                data = seg.get("data") or {}
+                if seg_type == "text":
+                    parts.append(str(data.get("text") or ""))
+                elif seg_type in ("face", "mface"):
+                    emoji = face_segment_to_emoji(seg_type, data)
+                    if emoji:
+                        parts.append(emoji)
+
+            text = "".join(parts).strip()
 
             if not text:
                 continue
