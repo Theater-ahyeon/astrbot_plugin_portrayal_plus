@@ -5,18 +5,7 @@
 
 # astrbot_plugin_portrayal_plus
 
-_✨ 人物画像插件 ✨_
-
-> **本仓库是什么？**
-> 它是 [astrbot_plugin_portrayal](https://github.com/Zhalslar/astrbot_plugin_portrayal)（作者 Zhalslar）
-> 的**增强分支**，独立发布以便直接安装使用。相比原版新增：
-> 克隆人格融合、快捷改人格、WebUI 人格面板、切换到任意已有人格、
-> 以及「切换/恢复人格后机器人昵称头像串号」的修复。
-> 插件内部名与目录名均为 `astrbot_plugin_portrayal_plus`，**可与原插件共存**；
-> 首次启动会自动迁移原插件数据目录里的档案。
-> 增强部分的 PR 在 [原仓库 #41](https://github.com/Zhalslar/astrbot_plugin_portrayal/pull/41)。
-
-  
+_✨ 人物画像插件 ✨_  
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)

@@ -302,7 +302,7 @@ class PluginPageAPI:
             paths = []
         return _ok(
             {
-                "plugin": PLUGIN_NAME,
+                "plugin": self.plugin_name,
                 "request_path": request.path,
                 "path_params": dict(request.path_params),
                 "query": dict(request.query),
