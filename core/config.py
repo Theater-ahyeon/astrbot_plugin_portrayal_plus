@@ -201,7 +201,12 @@ class MessageConfig(ConfigNode):
         super().__init__(data)
         self.cache_ttl = self.cache_ttl_min * 60
         self.max_query_rounds = 200
-        self.per_query_count = 200
+        # 单页请求条数：部分协议端会截断到 200，可通过配置调大试（面板「消息查询配置」）
+        try:
+            configured = int(data.get("per_query_count") or 0)
+        except (TypeError, ValueError):
+            configured = 0
+        self.per_query_count = configured if 200 <= configured <= 2000 else 200
 
     def get_query_rounds(self, rounds=None) -> int:
         """获取查询轮数"""

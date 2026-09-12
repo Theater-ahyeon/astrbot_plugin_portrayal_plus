@@ -50,6 +50,7 @@ RESERVED_COMMANDS = frozenset(
         "查头像",
         "人格列表",
         "修复表情",
+        "测抓取",
     }
 )
 
@@ -972,6 +973,52 @@ class PortrayalPlugin(Star):
             msg += f"\n⚠️ {identity_warning}"
         return msg
 
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("测抓取")
+    async def probe_fetch(self, event: AiocqhttpMessageEvent):
+        """
+        测抓取 —— 诊断：实测协议端单页最多返回多少条群消息
+
+        用法：测抓取 200,500,1000   （不填则测 200 与 1000）
+        """
+        raw = self._persona_arg(event.message_str, event.get_messages())
+        sizes = []
+        for part in (raw or "").replace("，", ",").split(","):
+            part = part.strip()
+            if part.isdigit():
+                n = int(part)
+                if 1 <= n <= 5000:
+                    sizes.append(n)
+        if not sizes:
+            sizes = [200, 1000]
+
+        group_id = str(event.get_group_id())
+        lines = [f"协议端单页抓取实测（群 {group_id}）："]
+        for size in sizes:
+            try:
+                result = await event.bot.api.call_action(
+                    "get_group_msg_history",
+                    group_id=group_id,
+                    message_seq=0,
+                    count=size,
+                    reverseOrder=True,
+                )
+                messages = (result or {}).get("messages") or []
+                lines.append(f"  请求 {size} 条 → 实际返回 {len(messages)} 条")
+                if messages:
+                    first = messages[0]
+                    last = messages[-1]
+                    lines.append(
+                        f"     最新 id={first.get('message_id')} / "
+                        f"最早 id={last.get('message_id')}"
+                    )
+            except Exception as e:
+                lines.append(f"  请求 {size} 条 → 失败：{type(e).__name__}: {e}")
+
+        lines.append("说明：若「请求 1000 → 返回 200」，说明协议端把单页截断在 200 条，")
+        lines.append("轮询页数才是提升深度的唯一办法（用「画像 @群友 轮数」指定）。")
+        yield event.plain_result("\n".join(lines))
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("修复表情")

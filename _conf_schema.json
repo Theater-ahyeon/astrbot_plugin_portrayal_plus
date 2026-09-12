@@ -1,119 +1,130 @@
 {
-    "llm": {
-        "description": "LLM配置",
-        "type": "object",
-        "items": {
-            "provider_id": {
-                "description": "用于分析画像的LLM提供商",
-                "hint": "留空或者填写的提供商不存在时, 则使用当前正在使用的LLM提供商",
-                "type": "string",
-                "default": "",
-                "_special": "select_provider"
-            },
-            "retry_times": {
-                "description": "LLM调用失败重试次数",
-                "type": "int",
-                "hint": "LLM调用失败时, 重试的次数",
-                "slider": {
-                    "min": 1,
-                    "max": 5,
-                    "step": 1
-                },
-                "default": 2
-            }
-        }
-    },
-    "message": {
-        "description": "消息查询配置",
-        "type": "object",
-        "items": {
-            "default_query_rounds": {
-                "description": "获取群消息的默认轮询次数",
-                "type": "int",
-                "hint": "每轮固定获取200条群消息, 此处指定轮询多少次。也可用命令 “画像 @群友 轮数” 可实时指定轮数",
-                "slider": {
-                    "min": 1,
-                    "max": 100,
-                    "step": 5
-                },
-                "default": 50
-            },
-            "max_msg_count": {
-                "description": "用于分析的最大消息量(条)",
-                "type": "int",
-                "hint": "轮询过程中， 获取的群消息数提前达到了最大消息量时，中断轮询。注意：用于分析的消息量越多, 画像越准确, 但需要消耗更多时间和Token",
-                "slider": {
-                    "min": 100,
-                    "max": 1000,
-                    "step": 10
-                },
-                "default": 500
-            },
-            "cache_ttl_min": {
-                "description": "消息缓存的过期时长(分钟)",
-                "type": "int",
-                "hint": "查询群消息时，会将查询到的消息缓存一段时间方便下次快速取用。此处定义缓存过久过期, 单位为分钟，过期后清除缓存的消息",
-                "slider": {
-                    "min": 1,
-                    "max": 60,
-                    "step": 1
-                },
-                "default": 30
-            },
-            "protected_user_ids": {
-                "description": "受保护用户名单",
-                "type": "list",
-                "hint": "填写QQ号。名单中的用户不允许被查询消息",
-                "default": []
-            }
-        }
-    },
-    "inject_prompt": {
-        "description": "给提示词注入画像",
-        "type": "bool",
-        "hint": "打开后，每轮对话中，若本地存有当前用户的画像，则自动将该用户画像注入到系统提示词中",
-        "default": false
-    },
-    "merge_prompt": {
-        "description": "克隆人格融合指令",
-        "type": "text",
-        "hint": "当目标群友已存在克隆人格时，“克隆人格 @群友”会把旧人格 + 新的聊天记录一起交给LLM，并采用此处指令进行融合。清空本项后，下次加载会自动回填内置默认文案。",
-        "default": "你此前已为该群友生成过一份人格克隆提示词。\n现在基于新的聊天记录，对这份提示词进行完善融合：\n1. 保留原有内容中依然成立的性格特质、说话风格、行为习惯，不要无故改动；\n2. 仅在新的聊天记录提供明确新证据时，才修订、补充或删除相应特质；\n3. 新旧特质冲突时，以新证据为准；\n4. 保持结构清晰（说话风格 / 情绪模式 / 高频表达 / 触发反应 / 禁止项）；\n5. 融合后全文不超过原提示词的 1.2 倍且不超过 2000 字，宁可精炼不要堆砌；\n6. 只输出最终提示词正文，不要解释，不要代码块。\n用户昵称：{nickname}"
-    },
-    "edit_prompt": {
-        "description": "人格改写指令",
-        "type": "text",
-        "hint": "“改人格 @群友 <修改要求>”所用的系统提示词。清空本项后，下次加载会自动回填内置默认文案。",
-        "default": "你正在维护一份用于大模型“人格克隆”的系统提示词。\n请按照用户给出的修改要求，重写这份提示词，并遵守以下规则：\n1. 严格落实修改要求，用户没有提到的部分尽量保持原样，不要无故改动；\n2. 保留原有的结构（说话风格 / 情绪模式 / 高频表达 / 触发反应 / 禁止项）；\n3. 修改后全文不超过原提示词的 1.2 倍且不超过 2000 字，宁可精炼不要堆砌；\n4. 只输出修改后的提示词正文，不要解释，不要代码块，不要 Markdown 格式。\n用户昵称：{nickname}"
-    },
-    "entry_storage": {
-        "description": "提示词配置",
-        "hint": "可自定义多套提示词，并定义对应触发命令。由此实现不同风格的画像分析",
-        "type": "template_list",
-        "templates": {
-            "default": {
-                "name": "提示词条目",
-                "items": {
-                    "command": {
-                        "description": "触发命令",
-                        "hint": "定义用什么命令触发本套提示词",
-                        "type": "string",
-                        "default": "请输入命令"
-                    },
-                    "need_admin": { 
-                        "description": "仅管理员可用",
-                        "hint": "是否需要bot管理员权限触发命令",
-                        "type": "bool",
-                        "default": false
-                    },
-                    "content": {
-                        "description": "提示词内容",
-                        "hint": "请填写提示词内容",
-                        "type": "text",
-                        "default": "请输入提示词"
-                    }
-                }
-            }
-        }
+  "llm": {
+    "description": "LLM配置",
+    "type": "object",
+    "items": {
+      "provider_id": {
+        "description": "用于分析画像的LLM提供商",
+        "hint": "留空或者填写的提供商不存在时, 则使用当前正在使用的LLM提供商",
+        "type": "string",
+        "default": "",
+        "_special": "select_provider"
+      },
+      "retry_times": {
+        "description": "LLM调用失败重试次数",
+        "type": "int",
+        "hint": "LLM调用失败时, 重试的次数",
+        "slider": {
+          "min": 1,
+          "max": 5,
+          "step": 1
+        },
+        "default": 2
+      }
     }
+  },
+  "message": {
+    "description": "消息查询配置",
+    "type": "object",
+    "items": {
+      "default_query_rounds": {
+        "description": "获取群消息的默认轮询次数",
+        "type": "int",
+        "hint": "每轮固定获取200条群消息, 此处指定轮询多少次。也可用命令 “画像 @群友 轮数” 可实时指定轮数",
+        "slider": {
+          "min": 1,
+          "max": 100,
+          "step": 5
+        },
+        "default": 50
+      },
+      "max_msg_count": {
+        "description": "用于分析的最大消息量(条)",
+        "type": "int",
+        "hint": "轮询过程中， 获取的群消息数提前达到了最大消息量时，中断轮询。注意：用于分析的消息量越多, 画像越准确, 但需要消耗更多时间和Token",
+        "slider": {
+          "min": 100,
+          "max": 1000,
+          "step": 10
+        },
+        "default": 500
+      },
+      "cache_ttl_min": {
+        "description": "消息缓存的过期时长(分钟)",
+        "type": "int",
+        "hint": "查询群消息时，会将查询到的消息缓存一段时间方便下次快速取用。此处定义缓存过久过期, 单位为分钟，过期后清除缓存的消息",
+        "slider": {
+          "min": 1,
+          "max": 60,
+          "step": 1
+        },
+        "default": 30
+      },
+      "protected_user_ids": {
+        "description": "受保护用户名单",
+        "type": "list",
+        "hint": "填写QQ号。名单中的用户不允许被查询消息",
+        "default": []
+      },
+      "per_query_count": {
+        "description": "单页请求条数",
+        "type": "int",
+        "hint": "每次向协议端请求的群消息条数。默认 200；部分协议端（NapCat 等）会把单页截断在 200 条，调大若返回条数不变即为被截断，此时请改用「画像 @群友 轮数」增加页数。",
+        "slider": {
+          "min": 200,
+          "max": 2000,
+          "step": 100
+        },
+        "default": 200
+      }
+    }
+  },
+  "inject_prompt": {
+    "description": "给提示词注入画像",
+    "type": "bool",
+    "hint": "打开后，每轮对话中，若本地存有当前用户的画像，则自动将该用户画像注入到系统提示词中",
+    "default": false
+  },
+  "merge_prompt": {
+    "description": "克隆人格融合指令",
+    "type": "text",
+    "hint": "当目标群友已存在克隆人格时，“克隆人格 @群友”会把旧人格 + 新的聊天记录一起交给LLM，并采用此处指令进行融合。清空本项后，下次加载会自动回填内置默认文案。",
+    "default": "你此前已为该群友生成过一份人格克隆提示词。\n现在基于新的聊天记录，对这份提示词进行完善融合：\n1. 保留原有内容中依然成立的性格特质、说话风格、行为习惯，不要无故改动；\n2. 仅在新的聊天记录提供明确新证据时，才修订、补充或删除相应特质；\n3. 新旧特质冲突时，以新证据为准；\n4. 保持结构清晰（说话风格 / 情绪模式 / 高频表达 / 触发反应 / 禁止项）；\n5. 融合后全文不超过原提示词的 1.2 倍且不超过 2000 字，宁可精炼不要堆砌；\n6. 只输出最终提示词正文，不要解释，不要代码块。\n用户昵称：{nickname}"
+  },
+  "edit_prompt": {
+    "description": "人格改写指令",
+    "type": "text",
+    "hint": "“改人格 @群友 <修改要求>”所用的系统提示词。清空本项后，下次加载会自动回填内置默认文案。",
+    "default": "你正在维护一份用于大模型“人格克隆”的系统提示词。\n请按照用户给出的修改要求，重写这份提示词，并遵守以下规则：\n1. 严格落实修改要求，用户没有提到的部分尽量保持原样，不要无故改动；\n2. 保留原有的结构（说话风格 / 情绪模式 / 高频表达 / 触发反应 / 禁止项）；\n3. 修改后全文不超过原提示词的 1.2 倍且不超过 2000 字，宁可精炼不要堆砌；\n4. 只输出修改后的提示词正文，不要解释，不要代码块，不要 Markdown 格式。\n用户昵称：{nickname}"
+  },
+  "entry_storage": {
+    "description": "提示词配置",
+    "hint": "可自定义多套提示词，并定义对应触发命令。由此实现不同风格的画像分析",
+    "type": "template_list",
+    "templates": {
+      "default": {
+        "name": "提示词条目",
+        "items": {
+          "command": {
+            "description": "触发命令",
+            "hint": "定义用什么命令触发本套提示词",
+            "type": "string",
+            "default": "请输入命令"
+          },
+          "need_admin": {
+            "description": "仅管理员可用",
+            "hint": "是否需要bot管理员权限触发命令",
+            "type": "bool",
+            "default": false
+          },
+          "content": {
+            "description": "提示词内容",
+            "hint": "请填写提示词内容",
+            "type": "text",
+            "default": "请输入提示词"
+          }
+        }
+      }
+    }
+  }
 }

@@ -292,6 +292,12 @@ class MessageManager:
         scanned_actual = 0
         # 本次扫描内已经见过的消息 ID，用于过滤同一页/跨页重复
         seen_page_ids: set[str] = set()
+        stop_reason = "达到轮数上限"
+        logger.info(
+            f"[抓取] 开始 group={group_id} target={target_id} "
+            f"已有缓存={len(texts)}条 计划页数={needed_rounds} "
+            f"单页上限={self.cfg.per_query_count} 目标条数={self.cfg.max_msg_count}"
+        )
 
         # Resume from the shared group scan cursor.
         message_seq = self._group_cursor.get(group_id, 0)
@@ -305,6 +311,7 @@ class MessageManager:
                     cached = self._get_user_cache(group_id, target_id)
                     if cached and len(cached) >= self.cfg.max_msg_count:
                         texts = cached[:]
+                        stop_reason = f"已取够目标用户的 {self.cfg.max_msg_count} 条"
                         break
 
                     message_seq = self._group_cursor.get(group_id, 0)
@@ -316,6 +323,10 @@ class MessageManager:
                         reverseOrder=True,
                     )
                     messages = result.get("messages", [])
+                    logger.info(
+                        f"[抓取] 第 {rounds + 1} 页：请求 {self.cfg.per_query_count} 条，"
+                        f"实返 {len(messages)} 条"
+                    )
                     if messages:
                         message_seq = messages[0]["message_id"]
                         self._group_cursor[group_id] = message_seq
@@ -334,6 +345,7 @@ class MessageManager:
 
                 messages = result.get("messages", [])
                 if not messages:
+                    stop_reason = "协议端已无更早的消息（翻到底了）"
                     break
 
                 # Refresh the target cache after collecting the page.
@@ -350,6 +362,11 @@ class MessageManager:
         if cache_changed:
             self.save_cache()
 
+        logger.info(
+            f"[抓取] 结束 group={group_id} target={target_id} "
+            f"共扫 {scanned_actual} 条群消息 / {rounds} 页，"
+            f"目标用户命中 {len(texts)} 条，停止原因：{stop_reason}"
+        )
         return MessageQueryResult(
             texts=texts[: self.cfg.max_msg_count],
             scanned_messages=scanned_actual,
