@@ -2,7 +2,7 @@ name: astrbot_plugin_portrayal_plus
 display_name: 人物画像 · 增强版
 desc: 爬取群友的聊天记录，进而用llm分析群友画像
 help: 略
-version: v1.1.30
+version: v1.1.31
 author: Zhalslar（增强分支由 Theater-ahyeon 维护）
 repo: https://github.com/Theater-ahyeon/astrbot_plugin_portrayal_plus
 pages:

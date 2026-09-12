@@ -62,6 +62,8 @@ class MessageManager:
         # group cursor: group -> message_seq
         # group lock: serialize history scans within the same group
         self._group_locks: dict[str, asyncio.Lock] = {}
+        # 已探明可用的历史消息参数写法（见 _fetch_history_page）
+        self._history_param_hint: tuple[tuple[str, Any], ...] | None = None
 
     # =========================
     # cache helpers
@@ -152,6 +154,78 @@ class MessageManager:
             cached.timestamp = now
 
         return added
+
+    # 不同协议端对「历史消息」的分页参数命名不一致，这里按兼容性依次尝试：
+    # - OneBot v11 规范：message_seq + reverseOrder
+    # - SnowLuma 实际实现：message_id + reverse_order（参数名不匹配时会静默忽略 → 每页返回同一批）
+    # 每项是 (参数名, 取值)，取值为 _ANCHOR 时填入分页锚点
+    _ANCHOR = object()
+    _HISTORY_PARAM_SETS: tuple[tuple[tuple[str, Any], ...], ...] = (
+        # OneBot v11 规范
+        (("message_seq", _ANCHOR), ("reverseOrder", True)),
+        # SnowLuma 等实现的真实签名
+        (("message_id", _ANCHOR), ("reverse_order", True)),
+        # 参数名交叉兼容
+        (("message_id", _ANCHOR), ("reverseOrder", True)),
+        (("message_seq", _ANCHOR), ("reverse_order", True)),
+    )
+
+    async def _fetch_history_page(
+        self,
+        event: AiocqhttpMessageEvent,
+        group_id: str,
+        anchor: int,
+        page_index: int = 0,
+    ) -> list[dict[str, Any]]:
+        """按游标取一页群历史消息（自动适配协议端的参数命名）
+
+        关键点：协议端**不会**因为参数名不认识而报错，而是静默忽略、返回最新一批。
+        所以不能只在「返回空」时才换参数，否则永远停在第一套写法上、每页都拿同一批。
+        这里按 page_index 依次轮换参数写法，翻不动时自然换下一种。
+
+        Args:
+            anchor: 分页锚点（上一次取到的最早一条消息 ID）；0 表示取最新一页。
+            page_index: 第几页（0 起），用于轮换参数写法。
+
+        Returns:
+            该页消息列表；全部写法都失败时返回空列表。
+        """
+        last_error: Exception | None = None
+        param_sets = self._HISTORY_PARAM_SETS
+        if page_index == 0:
+            # 首屏用规范写法即可（锚点 0 时各写法等价）
+            ordered = list(param_sets)
+        else:
+            # 关键：协议端对不认识的参数是**静默忽略**，会一直返回最新一批。
+            # 所以每页都按页序轮换写法，保证迟早轮到真正生效的那套；
+            # 最后再把「已探明可用」的那套作为兜底补在末尾。
+            offset = page_index % len(param_sets)
+            ordered = list(param_sets[offset:]) + list(param_sets[:offset])
+            hint = getattr(self, "_history_param_hint", None)
+            if hint is not None and hint in param_sets and hint not in ordered[-1:]:
+                ordered.append(hint)
+        for params in ordered:
+            kwargs: dict[str, Any] = {
+                "group_id": group_id,
+                "count": self.cfg.per_query_count,
+            }
+            for key, value in params:
+                kwargs[key] = anchor if value is self._ANCHOR else value
+            try:
+                result: dict[str, Any] = await event.bot.api.call_action(
+                    "get_group_msg_history", **kwargs
+                )
+            except Exception as e:  # 某些实现会因未知参数直接报错
+                last_error = e
+                continue
+            messages = result.get("messages", []) if isinstance(result, dict) else []
+            if messages:
+                # 记住能用的那套写法，后续页优先复用
+                self._history_param_hint = params
+                return list(messages)
+        if last_error is not None:
+            logger.warning(f"[抓取] 取历史消息失败：{last_error}")
+        return []
 
     # =========================
     # public api
@@ -315,19 +389,15 @@ class MessageManager:
                         break
 
                     message_seq = self._group_cursor.get(group_id, 0)
-                    result: dict[str, Any] = await event.bot.api.call_action(
-                        "get_group_msg_history",
-                        group_id=group_id,
-                        message_seq=message_seq,
-                        count=self.cfg.per_query_count,
-                        reverseOrder=True,
+                    messages = await self._fetch_history_page(
+                        event, group_id, message_seq, page_index=rounds
                     )
-                    messages = result.get("messages", [])
                     logger.info(
-                        f"[抓取] 第 {rounds + 1} 页：请求 {self.cfg.per_query_count} 条，"
-                        f"实返 {len(messages)} 条"
+                        f"[抓取] 第 {rounds + 1} 页：锚点={message_seq} "
+                        f"请求 {self.cfg.per_query_count} 条，实返 {len(messages)} 条"
                     )
                     if messages:
+                        # 各实现的返回顺序都是「数组首条 = 本页最早」，据此继续往前翻
                         message_seq = messages[0]["message_id"]
                         self._group_cursor[group_id] = message_seq
                         # 同一页里可能重复返回同一条，先按 ID 过滤再入库
@@ -343,12 +413,11 @@ class MessageManager:
                         self._collect_messages(group_id, fresh)
                         cache_changed = True
 
-                messages = result.get("messages", [])
                 if not messages:
                     stop_reason = "协议端已无更早的消息（翻到底了）"
                     break
 
-                # Refresh the target cache after collecting the page.
+                # 收集完这一页后刷新目标用户缓存
                 cached = self._get_user_cache(group_id, target_id)
                 if cached:
                     texts = cached[:]
