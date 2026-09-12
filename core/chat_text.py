@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import re
 
+from .emoji import bracket_emoji_to_emoji, slash_emoji_to_emoji
+
 # 代码围栏 ```lang ... ```
 _FENCE_RE = re.compile(r"^[ \t]*```[^\n]*$", re.MULTILINE)
 # 行内代码 `code`
@@ -48,6 +50,10 @@ def markdown_to_plain(text: str) -> str:
         return ""
 
     out = str(text).replace("\r\n", "\n").replace("\r", "\n")
+    # 表情写法先转成真 emoji（[捂脸] 与 /捂脸 两种）：
+    # 方括号在 Markdown 里长得像链接/标记，斜杠也容易被后续规则吃掉
+    out = bracket_emoji_to_emoji(out)
+    out = slash_emoji_to_emoji(out)
 
     # 代码围栏：去掉围栏行，保留内容
     out = _FENCE_RE.sub("", out)

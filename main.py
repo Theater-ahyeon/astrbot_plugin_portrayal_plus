@@ -16,7 +16,13 @@ from astrbot.core.provider.entities import ProviderRequest
 from .core.bot_identity import BotIdentityStore, build_avatar_urls, download_avatar_b64
 from .core.chat_text import markdown_to_plain
 from .core.config import PluginConfig
-from .core.emoji import slash_emoji_to_emoji
+from .core.emoji import bracket_emoji_to_emoji
+from .core.emoji import (
+            bracket_emoji_to_emoji,
+            missing_bracket_tokens,
+            remember_unmapped_bracket_tokens,
+            slash_emoji_to_emoji,
+        )
 from .core.db import UserProfileDB
 from .core.entry import EntryService
 from .core.llm import LLMService
@@ -1077,7 +1083,10 @@ class PortrayalPlugin(Star):
             touched = False
             for field in ("clone_prompt", "portrait"):
                 raw = getattr(profile, field, "") or ""
-                fixed = slash_emoji_to_emoji(raw)
+                # 斜杠（/捂脸）与方括号（[捂脸]）两种写法都修
+                fixed = bracket_emoji_to_emoji(slash_emoji_to_emoji(raw))
+                # 顺手统计「没映射到」的方括号写法，便于补全映射表
+                remember_unmapped_bracket_tokens(raw)
                 if fixed != raw:
                     setattr(profile, field, fixed)
                     touched = True

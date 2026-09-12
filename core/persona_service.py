@@ -12,7 +12,7 @@ from typing import Any
 
 from astrbot.api import logger
 
-from .emoji import slash_emoji_to_emoji
+from .emoji import bracket_emoji_to_emoji, slash_emoji_to_emoji
 
 from .config import PluginConfig
 from .db import UserProfileDB
@@ -101,7 +101,8 @@ def normalize_persona_text(text: str) -> str:
     上游（如 ChatLab）生成的人格常用 `/擦汗` 表示表情，写进库后模型会照抄这种写法，
     发消息时就成了「/擦汗」而不是 😅。
     """
-    return slash_emoji_to_emoji(text or "")
+    # 两种写法都要处理：ChatLab 用 [捂脸]，QQ 客户端用 /捂脸
+    return bracket_emoji_to_emoji(slash_emoji_to_emoji(text or ""))
 
 
 class PersonaService:

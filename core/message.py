@@ -11,7 +11,11 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 )
 
 from .config import PluginConfig
-from .emoji import face_segment_to_emoji, slash_emoji_to_emoji
+from .emoji import (
+    bracket_emoji_to_emoji,
+    face_segment_to_emoji,
+    slash_emoji_to_emoji,
+)
 from .message_cache import CachedMessages, MessageCacheStorage
 
 
@@ -37,7 +41,9 @@ class MessageQueryResult:
         缓存里保留**原文**（忠实于聊天记录），但模型看到的应该是真表情：
         否则模型会照抄「/擦汗」这种写法，人格里就又出现斜杠表情了。
         """
-        return [slash_emoji_to_emoji(x) for x in self.texts]
+        return [
+            bracket_emoji_to_emoji(slash_emoji_to_emoji(x)) for x in self.texts
+        ]
 
 
 # =========================

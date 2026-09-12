@@ -186,6 +186,76 @@ NAME_TO_EMOJI: dict[str, str] = {
     "兔子": "🐰",
     "猪": "🐷",
     "鱼": "🐟",
+    # --- QQ 新版/变体表情（人格里常见的口语名，按方括号或斜杠写法出现）---
+    "挠头": "🤔",
+    "抓头": "🤔",
+    "摸头": "🥰",
+    "滑稽": "😏",
+    "汗": "😅",
+    "汗流浃背": "😅",
+    "冷汗直流": "😰",
+    "尴尬笑": "😅",
+    "哭笑不得": "😂",
+    "笑死": "😂",
+    "笑死我了": "🤣",
+    "笑不活了": "🤣",
+    "捂脸笑": "🤦",
+    "捂脸哭": "😭",
+    "委屈巴巴": "🥺",
+    "可怜巴巴": "🥺",
+    "大哭一场": "😭",
+    "偷偷笑": "🤭",
+    "捂嘴": "🤐",
+    "翻白眼": "🙄",
+    "看戏": "🍿",
+    "吃瓜": "🍉",
+    "点赞赞": "👍",
+    "鼓掌掌": "👏",
+    "抱抱": "🤗",
+    "比心心": "🫰",
+    "烟花": "🎆",
+    "庆祝": "🎉",
+    "撒花": "🎉",
+    "星星眼": "🤩",
+    "眼冒星星": "🤩",
+    "无语凝噎": "😑",
+    "呆滞": "😐",
+    "放空": "😶",
+    "打哈欠": "🥱",
+    "困了": "😪",
+    "睡觉觉": "😴",
+    "发抖抖": "🥶",
+    "瑟瑟发抖": "🥶",
+    "炸毛": "😤",
+    "气鼓鼓": "😤",
+    "憋屈": "😖",
+    "救命": "🆘",
+    "投降": "🙌",
+    "摆烂": "🛌",
+    "躺平": "🛌",
+    "摸鱼": "🐟",
+    "加班": "🌚",
+    "殉职": "💀",
+    "开学": "🎒",
+    "开学啦": "🎒",
+    "眯一会": "😴",
+    "完了": "😱",
+    "不想干": "🙃",
+    "乖": "😊",
+    "护崽": "🛡️",
+    "偷表情": "😏",
+    "找表情": "🔍",
+    "啧": "😤",
+    "啧声": "😤",
+    "砸嘴": "😤",
+    "开学啦": "🎒",
+    # QQ「doge 系列」与常用单字表情
+    "呆无辜": "🐶",
+    "doge": "🐶",
+    "看": "👀",
+    "瞅": "👀",
+    "钱": "💰",
+    "要钱": "💰",
 }
 
 # face id -> emoji。只收**有把握**的区间（OneBot/QQ 老版系统表情），
@@ -238,6 +308,10 @@ _NAME_PATTERN = "|".join(
     re.escape(name) for name in sorted(NAME_TO_EMOJI, key=len, reverse=True)
 )
 _SLASH_EMOJI_RE = re.compile(rf"/({_NAME_PATTERN})(?![A-Za-z0-9_])")
+# 方括号写法 [捂脸]：上游（ChatLab 等）与部分客户端用这种记法。
+# 这里匹配**任意**方括号 token，再查表决定是否转换 —— 只用已知表匹配的话，
+# 未收录的写法根本进不了回调，也就无法统计「映射没做全」。
+_BRACKET_TOKEN_RE = re.compile(r"\[([^\[\]\n]{1,12})\]")
 
 
 def face_segment_to_emoji(seg_type: str, data: dict) -> str:
@@ -286,6 +360,81 @@ def slash_emoji_to_emoji(text: str) -> str:
     return _SLASH_EMOJI_RE.sub(repl, text)
 
 
+# 未能识别为表情的方括号 token（供排查「映射没做全」）
+_UNMAPPED_BRACKET_TOKENS: set[str] = set()
+
+
+def _is_emoji_char(ch: str) -> bool:
+    """判断字符是否属于 emoji 区段（用于区分「[😅]」与「[未知词]」）"""
+    code = ord(ch)
+    return (
+        0x1F300 <= code <= 0x1FAFF  # 各类 emoji 主体
+        or 0x1F000 <= code <= 0x1F2FF
+        or 0x2600 <= code <= 0x27BF  # 杂项符号、装饰符号
+        or 0x2190 <= code <= 0x21FF  # 箭头
+        or 0x2B00 <= code <= 0x2BFF
+        or 0xFE0F == code  # 变体选择符
+        or 0x200D == code  # 零宽连接符
+        or 0x20E3 == code  # 键帽
+    )
+
+
+def scan_bracket_tokens(text: str) -> tuple[list[str], list[str]]:
+    """扫描文本里所有方括号 token
+
+    Returns:
+        (已能映射的 [(token, emoji)]，未映射的 token 列表)
+    """
+    if not text:
+        return [], []
+    mapped: list[str] = []
+    unmapped: list[str] = []
+    for match in _BRACKET_TOKEN_RE.finditer(text):
+        token = match.group(1)
+        if token in NAME_TO_EMOJI:
+            mapped.append(token)
+        else:
+            unmapped.append(token)
+    return mapped, unmapped
+
+
+def bracket_emoji_to_emoji(text: str) -> str:
+    """把 `[捂脸]` 这类方括号表情文本转成真 emoji
+
+    只替换**确认为表情名**的写法；`[回复消息]`、`[图片]`、`[MSG_ID:1]` 等
+    非表情标记保持原样。
+    """
+    if not text or "[" not in text:
+        return text
+    return _BRACKET_TOKEN_RE.sub(
+        lambda m: NAME_TO_EMOJI.get(m.group(1), m.group(0)), text
+    )
+
+
+def remember_unmapped_bracket_tokens(text: str) -> list[str]:
+    """登记某段文本里未映射的方括号 token，并返回它们
+
+    只在扫描**人格/画像正文**这类需要修的地方调用；聊天消息里的杂项方括号
+    （如 [图片]、[回复消息]）不作为补映射依据，避免噪音。
+    """
+    _, unmapped = scan_bracket_tokens(text)
+    for token in unmapped:
+        # 跳过本来就是 emoji 的（例如已被转换过、又被方括号包住的 [😅]），
+        # 以及带数字/后缀的写法（[开学啦3]），这些不是映射缺口。
+        # 注意：只按 emoji 区段判断，不能用 ord > 0x2000（汉字也在那之上）。
+        if any(_is_emoji_char(ch) for ch in token):
+            continue
+        if any(ch.isdigit() for ch in token):
+            continue
+        _UNMAPPED_BRACKET_TOKENS.add(token)
+    return unmapped
+
+
+def missing_bracket_tokens() -> list[str]:
+    """返回登记过的、未映射的方括号 token（便于补映射表）"""
+    return sorted(_UNMAPPED_BRACKET_TOKENS)
+
+
 def normalize_bot_emoji(text: str) -> str:
     """统一处理文本里的表情：CQ 码 -> emoji，斜杠表情 -> emoji"""
     if not text:
@@ -296,4 +445,4 @@ def normalize_bot_emoji(text: str) -> str:
             lambda m: FACE_ID_TO_EMOJI.get(int(m.group(1)), ""),
             text,
         )
-    return slash_emoji_to_emoji(text)
+    return bracket_emoji_to_emoji(slash_emoji_to_emoji(text))

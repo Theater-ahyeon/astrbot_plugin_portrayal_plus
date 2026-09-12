@@ -1,1 +1,2 @@
-pillowmd
+# 本插件不需要额外依赖（yaml 由 AstrBot 自带）。
+# 上游 requirements.txt 里的 `pillowmd` 并不存在，会导致 pip 安装失败，故移除。

@@ -1,9 +1,9 @@
 
 <div align="center">
 
-![:name](https://count.getloli.com/@astrbot_plugin_portrayal?name=astrbot_plugin_portrayal&theme=minecraft&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
+![:name](https://count.getloli.com/@astrbot_plugin_portrayal_plus?name=astrbot_plugin_portrayal_plus&theme=minecraft&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
 
-# astrbot_plugin_portrayal
+# astrbot_plugin_portrayal_plus
 
 _✨ 人物画像插件 ✨_  
 
@@ -29,7 +29,7 @@ _✨ 人物画像插件 ✨_
 ```bash
 # 克隆仓库到插件目录
 cd /AstrBot/data/plugins
-git clone https://github.com/Zhalslar/astrbot_plugin_portrayal
+git clone https://github.com/Theater-ahyeon/astrbot_plugin_portrayal_plus
 
 # 控制台重启AstrBot
 ```
