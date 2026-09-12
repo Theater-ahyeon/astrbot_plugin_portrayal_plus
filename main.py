@@ -55,6 +55,33 @@ RESERVED_COMMANDS = frozenset(
 )
 
 
+# 单轮融合最多允许「新记录」相对旧人格放大多少倍，避免一次改写覆盖全部历史
+MAX_SAMPLE_GROWTH_RATIO = 6.0
+# 样本计数上限（防止长期累加溢出/失去意义）
+MAX_SAMPLE_TOTAL = 200_000
+
+
+def _accumulate_sample_count(old: int, new: int) -> int:
+    """累加「这份人格依据过多少条聊天记录」
+
+    新记录相对旧样本增长过快时按倍数封顶：否则一次抽取上千条就会把
+    之前几十轮积累的结论权重压到可以忽略。
+    """
+    try:
+        old_n = max(0, int(old or 0))
+    except (TypeError, ValueError):
+        old_n = 0
+    try:
+        new_n = max(0, int(new or 0))
+    except (TypeError, ValueError):
+        new_n = 0
+
+    if old_n <= 0:
+        return min(new_n, MAX_SAMPLE_TOTAL)
+    allowed = int(old_n * MAX_SAMPLE_GROWTH_RATIO)
+    return min(old_n + min(new_n, allowed), MAX_SAMPLE_TOTAL)
+
+
 class PortrayalPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -362,6 +389,12 @@ class PortrayalPlugin(Star):
             profile.portrait = old_profile.portrait
             profile.timestamp = old_profile.timestamp
             profile.clone_prompt = old_profile.clone_prompt
+            # 融合权重依赖这两项，必须一并继承（否则旧人格样本数会被当成 0）
+            profile.clone_sample_count = old_profile.clone_sample_count
+            profile.clone_built_at = old_profile.clone_built_at
+            profile.persona_updated_at = old_profile.persona_updated_at
+            profile.remark = profile.remark or old_profile.remark
+            profile.long_nick = profile.long_nick or old_profile.long_nick
 
         # 只有“克隆”类命令才涉及人格融合，其余命令（画像 / 找对象…）保持原样
         old_clone_prompt = ""
@@ -426,6 +459,9 @@ class PortrayalPlugin(Star):
                 old_clone_prompt=old_clone_prompt,
                 merge_prompt_template=merge_prompt,
                 umo=event.unified_msg_origin,
+                # 旧人格累计依据的样本条数（含历次融合），用于按权重融合
+                old_sample_count=profile.clone_sample_count,
+                merge_strength=self.cfg.message.merge_weight_strength,
             )
         except Exception as e:
             logger.error(f"LLM 调用失败：{e}")
@@ -442,6 +478,11 @@ class PortrayalPlugin(Star):
         # 保存克隆人格
         if "克隆" in cmd:
             profile.clone_prompt = content
+            # 累计样本条数：这是下一轮融合时的「旧人格权重」依据
+            profile.clone_sample_count = _accumulate_sample_count(
+                profile.clone_sample_count, result.count
+            )
+            profile.clone_built_at = int(time.time())
 
         # 保存画像并发送
         profile.portrait = content

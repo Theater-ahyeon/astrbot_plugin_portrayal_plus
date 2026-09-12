@@ -210,6 +210,10 @@ class PersonaService:
                     "too_long": len(clone) > MAX_SAFE_PROMPT_LEN,
                     "protected": profile.user_id in protected,
                     "persona_id": profile.persona_id,
+                    # 融合权重依据：这份人格累计基于多少条聊天记录
+                    "clone_sample_count": int(profile.clone_sample_count or 0),
+                    "clone_built_at": int(profile.clone_built_at or 0),
+                    "persona_updated_at": int(profile.persona_updated_at or 0),
                 }
             )
 

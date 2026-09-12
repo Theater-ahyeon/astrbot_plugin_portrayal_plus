@@ -23,6 +23,10 @@ class UserProfile:
     clone_prompt: str = ""
     # 最近一次修改克隆人格的时间（用于面板提示「画像可能早于当前人格」）
     persona_updated_at: int = 0
+    # 这份人格是「累计多少条聊天记录」的结论（含历次融合），用于按样本量加权融合
+    clone_sample_count: int = 0
+    # 上次由聊天记录生成/融合人格的时间（观察窗口起点参考）
+    clone_built_at: int = 0
 
     @property
     def persona_id(self) -> str:

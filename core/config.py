@@ -23,11 +23,27 @@ DEFAULT_MERGE_PROMPT = """你此前已为该群友生成过一份人格克隆提
 现在基于新的聊天记录，对这份提示词进行完善融合：
 1. 保留原有内容中依然成立的性格特质、说话风格、行为习惯，不要无故改动；
 2. 仅在新的聊天记录提供明确新证据时，才修订、补充或删除相应特质；
+3. 新旧特质冲突时，**依据提示中给出的「证据权重」判断**：权重高的一方更可信；
+   权重接近时同等采信；旧描述权重明显更高时，只有本次记录给出确凿反例才改写；
+4. 不要把权重低的样本里的一次性表现，写成稳定特质；
+5. 保持结构清晰（说话风格 / 情绪模式 / 高频表达 / 触发反应 / 禁止项）；
+6. 融合后全文不超过原提示词的 1.2 倍且不超过 2000 字，宁可精炼不要堆砌；
+7. 只输出最终提示词正文，不要解释，不要代码块。
+用户昵称：{nickname}"""
+
+# 历史内置的融合指令：用于识别「用户没改过」并自动升级到新版（自定义内容不动）
+LEGACY_MERGE_PROMPTS: tuple[str, ...] = (
+    """你此前已为该群友生成过一份人格克隆提示词。
+现在基于新的聊天记录，对这份提示词进行完善融合：
+1. 保留原有内容中依然成立的性格特质、说话风格、行为习惯，不要无故改动；
+2. 仅在新的聊天记录提供明确新证据时，才修订、补充或删除相应特质；
 3. 新旧特质冲突时，以新证据为准；
 4. 保持结构清晰（说话风格 / 情绪模式 / 高频表达 / 触发反应 / 禁止项）；
 5. 融合后全文不超过原提示词的 1.2 倍且不超过 2000 字，宁可精炼不要堆砌；
 6. 只输出最终提示词正文，不要解释，不要代码块。
-用户昵称：{nickname}"""
+用户昵称：{nickname}""",
+)
+
 
 DEFAULT_EDIT_PROMPT = """你正在维护一份用于大模型“人格克隆”的系统提示词。
 请按照用户给出的修改要求，重写这份提示词，并遵守以下规则：
@@ -201,6 +217,15 @@ class MessageConfig(ConfigNode):
         super().__init__(data)
         self.cache_ttl = self.cache_ttl_min * 60
         self.max_query_rounds = 200
+        # 融合强度：>1 更偏向新记录，<1 更保守（默认 1.0 = 纯按样本量）
+        try:
+            self.merge_weight_strength = float(
+                data.get("merge_weight_strength")
+                if data.get("merge_weight_strength") is not None
+                else 1.0
+            )
+        except (TypeError, ValueError):
+            self.merge_weight_strength = 1.0
         # 单页请求条数：部分协议端会截断到 200，可通过配置调大试（面板「消息查询配置」）
         try:
             configured = int(data.get("per_query_count") or 0)
@@ -305,6 +330,27 @@ class PluginConfig(ConfigNode):
         for key, default in self._PROMPT_DEFAULTS.items():
             if not isinstance(cfg.get(key), str) or not cfg.get(key, "").strip():
                 cfg[key] = default
+
+        # 内置「融合指令」升级：内容与某个历史内置版本完全一致（说明用户没改过）才替换；
+        # 用户自定义过的一律不动，只在日志里提示一句。
+        current_merge = str(cfg.get("merge_prompt") or "")
+        if current_merge.strip() and current_merge != DEFAULT_MERGE_PROMPT:
+            if current_merge in LEGACY_MERGE_PROMPTS:
+                cfg["merge_prompt"] = DEFAULT_MERGE_PROMPT
+                # 只改内存对象的话，下次重载又会读回旧文件，所以这里落盘一次
+                try:
+                    saver = getattr(cfg, "save_config", None)
+                    if callable(saver):
+                        saver()
+                except Exception as e:  # pragma: no cover - 落盘失败不影响使用
+                    logger.warning(f"升级「融合指令」后写回配置失败：{e}")
+                logger.info("已把内置「融合指令」升级为新版（含证据权重规则）")
+            else:
+                logger.info(
+                    "检测到自定义「融合指令」：未自动改写。融合时仍会附带证据权重说明，"
+                    "如需按权重取舍，建议在自定义指令里补一句"
+                    "「新旧特质冲突时按提示中的证据权重判断」。"
+                )
 
         super().__init__(cfg)
         self.context = context
