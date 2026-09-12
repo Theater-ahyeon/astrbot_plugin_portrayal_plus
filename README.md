@@ -1,9 +1,9 @@
 
 <div align="center">
 
-![:name](https://count.getloli.com/@astrbot_plugin_portrayal_plus?name=astrbot_plugin_portrayal_plus&theme=minecraft&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
+![:name](https://count.getloli.com/@astrbot_plugin_portrayal?name=astrbot_plugin_portrayal&theme=minecraft&padding=6&offset=0&align=top&scale=1&pixelated=1&darkmode=auto)
 
-# astrbot_plugin_portrayal_plus
+# astrbot_plugin_portrayal
 
 _✨ 人物画像插件 ✨_  
 
@@ -29,10 +29,26 @@ _✨ 人物画像插件 ✨_
 ```bash
 # 克隆仓库到插件目录
 cd /AstrBot/data/plugins
-git clone https://github.com/Theater-ahyeon/astrbot_plugin_portrayal_plus
+git clone https://github.com/Zhalslar/astrbot_plugin_portrayal
 
 # 控制台重启AstrBot
 ```
+
+## ⚖️ 融合权重怎么算
+
+已经有人格时再跑「克隆人格」，两份材料的说法不会等权，而是按**聊天记录条数**加权：
+
+| 旧人格累计样本 | 本次新记录 | 权重比（新:旧） | 结果 |
+| --- | --- | --- | --- |
+| 200 | 15 | 0.17 : 1（保底） | 基本保留旧描述，除非有确凿反例 |
+| 200 | 600 | 3.0 : 1 | 向新记录倾斜 |
+| 2000 | 100 | 0.17 : 1（保底） | 以旧描述为主 |
+| 200 | 2000 | 6.0 : 1（封顶） | 以新记录为主，旧描述仅保留未被推翻的部分 |
+
+- 这份人格累计依据过多少条记录会被记下来（含历次融合），作为下一轮的「旧样本数」；
+- 比例**双向封顶**（6:1 / 1:6）：既不让人格被一次上千条记录冲掉，也不让几条记录推翻旧结论；
+- 提示词里会写明权重比与取舍原则，权重低的一方只在提供确凿新证据时才改写结论；
+- 老档案没有样本计数时，按与本次相当的规模估计，并在提示里标注。
 
 ## ⚙️ 配置
 
@@ -80,7 +96,7 @@ git clone https://github.com/Theater-ahyeon/astrbot_plugin_portrayal_plus
 | `画像 @群友 <轮数>` | 所有人 | 综合性格画像（含优点/缺点/相处建议） |
 | `正画像 @群友 <轮数>` | 所有人 | 偏优点向的画像 |
 | `负画像 @群友 <轮数>` | 所有人 | 偏缺点向的画像（理性审判风格） |
-| `克隆人格 @群友 <轮数>` | 所有人 | 生成可用于「切换人格」的 system prompt，保存为该群友的克隆模板。**若该群友已有克隆人格，则自动把旧人格与新聊天记录融合完善**（融合指令见配置项 `merge_prompt`） |
+| `克隆人格 @群友 <轮数>` | 所有人 | 生成可用于「切换人格」的 system prompt，保存为该群友的克隆模板。**若该群友已有克隆人格，则自动把旧人格与新聊天记录融合完善**，并按「旧人格累计样本数 : 本次新记录数」**加权**：权重高的一方主导结论，比例上限 6:1、下限 1:6（配置项 `merge_weight_strength` 可调，融合指令见 `merge_prompt`） |
 | `重克隆人格 @群友 <轮数>` | 所有人 | 无视旧人格，完全按本次聊天记录重新生成克隆模板 |
 | `找对象 @群友 <轮数>` | 所有人 | 基于聊天记录分析性格画像并推荐契合的伴侣类型 |
 
