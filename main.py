@@ -43,13 +43,13 @@ MODE_SEPARATORS = ("：", ":", " ", "\u3000", "\n", "\t")
 # 超出该长度时额外提示「不建议直接群发」
 MAX_SAFE_PROMPT_LEN = 2000
 
-# 这些命令由各自的 @filter.command handler 处理，提示词监听器不再重复响应
 RESERVED_COMMANDS = frozenset(
     {
         "查看画像",
         "查看克隆",
         "改人格",
         "切换人格",
+        "全局切人格",
         "恢复人格",
         "查看机器人身份",
         "还原机器人资料",
@@ -840,6 +840,217 @@ class PortrayalPlugin(Star):
                 event, profile, umo, cid, force_applied_persona_id
             )
         yield event.plain_result(result)
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("全局切人格")
+    async def switch_global_persona(self, event: AiocqhttpMessageEvent):
+        """
+        全局切人格 @群友 | 全局切人格 <人格名或 ID>
+
+        - 一次性切换整体人格：所有群和私聊都切成同一个人格
+        - 自动修改 AstrBot 全局默认人格配置并持久化写入文件
+        - 同步将所有现存会话（群聊/私聊）的人格与上下文清空对齐，消除孤立群锁定
+        """
+        ats = [
+            str(seg.qq)
+            for seg in event.get_messages()[1:]
+            if isinstance(seg, At) and str(seg.qq).isdigit()
+        ]
+
+        target_name = ""
+        target_profile: UserProfile | None = None
+
+        if ats:
+            target_id = ats[0]
+            if self.cfg.message.is_protected_user(target_id):
+                yield event.plain_result("该用户在保护名单中，不允许切换")
+                return
+
+            target_profile = self.db.get(target_id)
+            if not target_profile or not target_profile.clone_prompt.strip():
+                yield event.plain_result(
+                    "该群友暂无可用的克隆人格，请先执行“克隆人格 @群友”"
+                )
+                return
+            target_name = target_profile.persona_id
+        else:
+            name = self._persona_arg(event.message_str, event.get_messages())
+            if not name:
+                # 尝试从带全局切人格的文本中提取
+                clean_text = self._clean_persona_arg(event.message_str)
+                if "全局切人格" in clean_text:
+                    name = self._clean_persona_arg(clean_text.split("全局切人格", 1)[1])
+                else:
+                    parts = clean_text.split(maxsplit=1)
+                    name = self._clean_persona_arg(parts[1]) if len(parts) > 1 else ""
+            if not name:
+                yield event.plain_result(
+                    "命令格式：\n"
+                    "  全局切人格 @群友       —— 全局切到该群友克隆人格（同步机器人昵称/头像）\n"
+                    "  全局切人格 <人格名>    —— 全局切到指定人格（同步机器人昵称）\n"
+                    "  人格列表               —— 看看有哪些可以切"
+                )
+                return
+            target_name = name
+
+        rows = await self._list_all_personas()
+        if not rows:
+            yield event.plain_result("没有读到任何人格，请先在 AstrBot 的「人格设定」里创建人格")
+            return
+
+        matched = self._match_persona(target_name, rows)
+        if not matched:
+            hint = "、".join(r[0] for r in rows[:8])
+            more = "…" if len(rows) > 8 else ""
+            yield event.plain_result(
+                f"没找到人格「{target_name}」。\n可用人格：{hint}{more}\n"
+                f"发送「人格列表」看完整列表。"
+            )
+            return
+        if len(matched) > 1:
+            hint = "、".join(r[0] for r in matched[:8])
+            yield event.plain_result(f"「{target_name}」匹配到多个人格，请写完整名称：{hint}")
+            return
+
+        chosen_id, _head, source = matched[0]
+
+        if target_profile is None:
+            for p in self.db.all().values():
+                if p.persona_id == chosen_id and p.clone_prompt.strip():
+                    target_profile = p
+                    break
+
+        if target_profile is not None:
+            source = "群员克隆"
+            chosen_prompt = target_profile.clone_prompt
+        else:
+            try:
+                persona = await self.context.persona_manager.get_persona(chosen_id)
+                chosen_prompt = (getattr(persona, "system_prompt", "") or "").strip()
+            except Exception:
+                chosen_prompt = ""
+
+        # 确保该人格在 persona_manager 中已就绪
+        if chosen_prompt:
+            try:
+                await self.context.persona_manager.update_persona(
+                    persona_id=chosen_id, system_prompt=chosen_prompt
+                )
+            except ValueError:
+                await self.context.persona_manager.create_persona(
+                    persona_id=chosen_id, system_prompt=chosen_prompt
+                )
+
+        umo = event.unified_msg_origin
+        async with self._identity_lock_for():
+            # 1. 备份机器人原资料
+            identity_warning, _captured = await self._capture_bot_identity(event, umo)
+
+            # 2. 修改全局核心配置并持久化保存
+            cfg_saved = await self._set_global_default_personality(chosen_id)
+
+            # 3. 批量对齐所有现有会话
+            conv_count = await self._reset_all_conversations_persona(chosen_id)
+
+            # 4. 同步机器人资料（昵称/头像）
+            display_name = target_profile.nickname if target_profile is not None else chosen_id
+            nickname_error = await self._sync_qq_nickname(event, display_name)
+            self.identity.mark_worn(
+                nickname=display_name,
+                umo="global",
+                owner=(target_profile.user_id if target_profile is not None else ""),
+            )
+
+            avatar_error = ""
+            if target_profile is not None:
+                avatar_b64 = await self._download_avatar(target_profile.user_id)
+                if avatar_b64:
+                    avatar_error = await self._sync_qq_avatar(event, avatar_b64)
+                else:
+                    avatar_error = "群友头像下载失败，头像未同步"
+
+        msg = (
+            f"已将全局整体人格切换为【{chosen_id}】（来源：{source}）！\n"
+            f"• 全局默认配置已持久化更新（重启依然生效）\n"
+            f"• 已同步重置 {conv_count} 个现有会话（所有群和私聊立刻生效）\n"
+            f"• 机器人昵称已同步改为【{display_name}】"
+        )
+        if target_profile is not None and not avatar_error:
+            msg += "，头像已同步"
+        elif target_profile is None:
+            msg += "（非群员克隆，头像未改动）"
+        if avatar_error:
+            msg += f"\n⚠️ {avatar_error}"
+        if nickname_error:
+            msg += f"\n⚠️ {nickname_error}"
+        if not cfg_saved:
+            msg += "\n⚠️ 全局配置文件保存失败，请检查写入权限"
+        if identity_warning:
+            msg += f"\n⚠️ {identity_warning}"
+        msg += "\n如需还原全局默认，请在各群使用「恢复人格」或使用面板配置。"
+        yield event.plain_result(msg)
+
+    async def _set_global_default_personality(self, persona_id: str) -> bool:
+        """更新 AstrBot 核心配置中的 default_personality 并持久化写入文件"""
+        try:
+            cfg = self.context.get_config()
+            if isinstance(cfg, dict):
+                prov_settings = cfg.setdefault("provider_settings", {})
+                prov_settings["default_personality"] = persona_id
+                if hasattr(cfg, "save_config"):
+                    cfg.save_config()
+                elif hasattr(self.context, "astrbot_config_mgr") and hasattr(
+                    self.context.astrbot_config_mgr, "save_config"
+                ):
+                    self.context.astrbot_config_mgr.save_config()
+            return True
+        except Exception as e:
+            logger.error(f"保存全局默认人格配置异常：{e}")
+            return False
+
+    async def _reset_all_conversations_persona(self, persona_id: str) -> int:
+        """遍历并重置所有现有会话的人格 ID 与上下文历史，消除孤立群的人格锁定"""
+        count = 0
+        try:
+            conv_mgr = getattr(self.context, "conversation_manager", None)
+            if not conv_mgr:
+                return 0
+            convs = []
+            if hasattr(conv_mgr, "get_conversations"):
+                res = conv_mgr.get_conversations()
+                convs = await res if asyncio.iscoroutine(res) else res
+            elif hasattr(conv_mgr, "db") and hasattr(conv_mgr.db, "get_conversations"):
+                res = conv_mgr.db.get_conversations()
+                convs = await res if asyncio.iscoroutine(res) else res
+
+            for conv in convs or []:
+                umo = (
+                    getattr(conv, "unified_msg_origin", None)
+                    or getattr(conv, "user_id", None)
+                    or ""
+                )
+                cid = getattr(conv, "conversation_id", None)
+                if hasattr(conv_mgr, "update_conversation"):
+                    try:
+                        res = conv_mgr.update_conversation(
+                            umo,
+                            cid,
+                            history=[],
+                            persona_id=persona_id,
+                        )
+                    except TypeError:
+                        res = conv_mgr.update_conversation(
+                            unified_msg_origin=umo,
+                            conversation_id=cid,
+                            history=[],
+                            persona_id=persona_id,
+                        )
+                    if asyncio.iscoroutine(res):
+                        await res
+                    count += 1
+        except Exception as e:
+            logger.warning(f"批量重置会话人格轻微异常（全局默认已生效）：{e}")
+        return count
+
 
     # ---------- 切到任意人格 ----------
 
